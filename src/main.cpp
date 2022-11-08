@@ -2,6 +2,9 @@
 #include <WS2812FX.h>
 #include <OneButton.h>
 #include <Fsm.h>
+#include <TM1637TinyDisplay.h>
+
+
 #include "ledControl.h"
 #include "buttonsControl.h"
 #include "settings.h"
@@ -18,6 +21,7 @@
 #define TRIGGER_CONFIG_DECTEMPO 9
 
 TimeComando timeComando;
+TM1637TinyDisplay display(CLOCK_CLK, CLOCK_DIO);
 
 int tempo;
 bool notify10s = false;
@@ -35,6 +39,8 @@ void click1();
 void longpress1();
 void click2();
 void longpress2();
+void duringLongPress1();
+void duringLongPress2();
 void on_zera_on_exit();
 void on_parado_exit();
 void on_countdown_exit();
@@ -55,10 +61,14 @@ State state_config(&on_config_enter, NULL, &on_config_exit);
 Fsm fsm(&state_parado);
 
 void setup() {
+  display.flipDisplay(true);
+  display.setBrightness(BRIGHT_HIGH);
+  display.showString("WELCOME TO TIME COMANDO");
+  delay(1000);
+  display.clear();
   setupLeds(&ws2812fx);
   setupButtonsControl(&button1, &button2,
-    click1, longpress1, click2, longpress2
-  );
+    click1, longpress1, click2, longpress2, duringLongPress1, duringLongPress2);
   Serial.begin(115200);
 
   Serial.println(timeComando.getTempoJogo());
@@ -90,6 +100,7 @@ void click1() {
       Serial.println("Adiciona Tempo");
       timeComando.addTempo();
       Serial.println(timeComando.getTempoJogo());
+      display.showNumber(timeComando.getTempoJogo(), true);
     break;
 
     case TRIGGER_PARADO:
@@ -132,9 +143,16 @@ void click2() {
       fsm.trigger(TRIGGER_CONFIG_DECTEMPO);
       Serial.println("Remove Tempo");
       timeComando.decTempo();
-      Serial.println(timeComando.getTempoJogo());
+      display.showNumber(timeComando.getTempoJogo(), true);
+    break;
+    case TRIGGER_PARADO:
+      fsm.trigger(TRIGGER_INICIA_CONTAGEM);
     break;
 
+    case TRIGGER_COUNTDOWN_ZERA:
+    case TRIGGER_PERDEU:
+      fsm.trigger(TRIGGER_PARADO);
+    break;
     default:
       break;
   }
@@ -145,6 +163,34 @@ void longpress2() {
   if (_STATE == TRIGGER_PARADO) {
     timeComando.toggleMute();
     Serial.printf("Estado do toogle mute %s\n", timeComando.isMutted() ? "MUTTED" : "NOT MUTTED");
+  }
+}
+
+void duringLongPress1() {
+  switch (_STATE) {
+    case TRIGGER_CONFIG:
+      fsm.trigger(TRIGGER_CONFIG_DECTEMPO);
+      Serial.println("Adiciona Tempo");
+      timeComando.addTempo();
+      display.showNumber(timeComando.getTempoJogo(), true);
+      delay(50);
+    break;
+    default:
+      break;
+  }
+}
+
+void duringLongPress2() {
+  switch (_STATE) {
+    case TRIGGER_CONFIG:
+      fsm.trigger(TRIGGER_CONFIG_DECTEMPO);
+      Serial.println("Remove Tempo");
+      timeComando.decTempo();
+      delay(50);
+      display.showNumber(timeComando.getTempoJogo(), true);
+    break;
+    default:
+      break;
   }
 }
 
@@ -162,6 +208,7 @@ void on_countdown_exit() {
 
 void on_perdeu_exit() {
   Serial.println("on_perdeu_exit");
+  delay(2000);
 }
 
 void on_config_exit() {
@@ -175,6 +222,7 @@ void on_zera_enter() {
 void on_parado_enter() {
   Serial.println("on_parado_enter");
   Serial.println("Zerar variaveis / mostrar zero no display");
+  display.clear();
   ledStop(&ws2812fx);
   _STATE = TRIGGER_PARADO;
   notify10s = false;
@@ -182,6 +230,7 @@ void on_parado_enter() {
 
   tempo = timeComando.getTempoJogo();
   Serial.printf("Tempo de jogo %i\n", tempo);
+  display.showNumber(tempo, true);
 }
 
 void on_countdown_enter() {
@@ -198,13 +247,16 @@ void on_countdown_enter() {
 void on_perdeu_enter() {
   Serial.println("on_perdeu_enter");
   ledPerdeu(&ws2812fx);
+  loopLeds(&ws2812fx);
   _STATE = TRIGGER_PERDEU;
+  display.showString("Perdeu!!!");
 }
 
 void on_config_enter() {
   Serial.println("on_config_enter");
   ledConfigura(&ws2812fx);
   _STATE = TRIGGER_CONFIG;
+  display.showString("CONF");
 }
 
 void on_state_countdown() {
@@ -231,6 +283,7 @@ void on_state_countdown() {
   if(millis() >= lastShow) {
     lastShow = millis() +1000;
     long tempoPassado = (timeComando.getMillisTrigger() - now)/1000;
-    Serial.printf("Tempo Passado %i\n", tempoPassado);
+    Serial.printf("Tempo Passado %ld\n", tempoPassado);
+    display.showNumber(tempoPassado, true);
   }
 }
